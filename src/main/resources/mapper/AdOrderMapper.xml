@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 마이바티스 중 시작하기 ─ 매핑된 SQL 구문 살펴보기에서 확인 가능 -->
+  
+<mapper namespace="com.docmall.demo.mapper.AdOrderMapper">
+
+<!-- 공통된 SQL 구문 작업: 검색 조건 -->
+<!-- 검색 기능을 사용하지 않을 경우, 값이 없어 foreach 이하 구문이 동작하지 않음 -->
+<sql id="criteria">
+	<trim prefix="(" suffix=") AND" prefixOverrides="OR">	 <!--  prefixOverrides="AND"는 오류 발생 -->
+		<!-- 단일 검색이 아닌 복합 검색을 위해 foreach 사용, item="type"는 변수의 성격 -->
+    		<foreach collection="cri.typeArr" item="type">
+			<trim prefix="OR">
+			    <choose>
+			        <when test="type == 'N'.toString()">
+			            ord_name LIKE '%' || #{cri.keyword} || '%' 
+			        </when>
+			        <when test="type == 'C'.toString()">
+			            ord_code LIKE '%' || #{cri.keyword} || '%' 
+			        </when>
+			    </choose>
+			</trim>
+    		</foreach>
+	</trim>
+</sql>
+
+<!--  공통된 SQL 구문 작업: 검색 조건 -->
+<sql id="period">
+	<if test="start_date != null and !start_date.equals('')"> <!-- 시작 데이터가 값이 있거나 공백이 아닌 경우 -->
+		<!-- 이외에 조건식이 추가될 경우 + 1 뒤에 AND를 붙이는 식으로 작성 -->
+		<![CDATA[
+		 	ord_regdate >= TO_DATE(#{start_date}) AND ord_regdate < TO_DATE(#{end_date}) + 1 AND
+		]]>
+	</if>
+</sql>
+
+<select id="order_list" resultType="com.docmall.demo.domain.OrderVO" parameterType="map">
+	<![CDATA[
+	SELECT
+		ord_code, mbsp_id, ord_name, ord_zipcode, ord_addr_basic, ord_addr_detail, ord_tel, ord_price, ord_regdate, ord_status, payment_status
+	FROM 
+	    (
+	    SELECT /*+ INDEX_DESC(order_tbl pk_order_tbl) */
+    			ROWNUM rn, ord_code, mbsp_id, ord_name, ord_zipcode, ord_addr_basic, ord_addr_detail, ord_tel, ord_price, ord_regdate, ord_status, payment_status
+	    FROM
+    			order_tbl
+	    WHERE
+	    		]]>
+		    <include refid="criteria"></include> 
+		    	<include refid="period"></include>
+		    <![CDATA[
+		   	ROWNUM <= #{cri.pageNum} * #{cri.amount}
+	    )
+	WHERE
+		rn > (#{cri.pageNum} -1) * #{cri.amount}]]>
+
+</select>
+
+<select id="getTotalCount" resultType="int" parameterType="map">
+	SELECT
+		COUNT(*)
+	FROM
+		order_tbl
+	WHERE 
+		<include refid="criteria"></include>
+		<include refid="period"></include>
+		ord_code > 0
+</select>
+
+<!-- 주문상세 1 ─ resultType 사용 -->
+<select id="orderDetailInfo1" parameterType="Long" resultType="com.docmall.demo.domain.OrderDetailInfoVO">
+	SELECT
+		OT.ORD_CODE, OT.PRO_NUM, OT.DT_AMOUNT, P.PRO_NAME, P.PRO_PRICE, OT.DT_AMOUNT * P.PRO_PRICE AS ORD_PRICE, P.PRO_UP_FOLDER, P.PRO_IMG
+	FROM
+		ORDETAIL_TBL OT, PRODUCT_TBL P
+	WHERE 
+		OT.PRO_NUM = P.PRO_NUM AND OT.ORD_CODE = #{ord_code}
+</select>
+
+<!-- 주문상세 2 ─ resultType을 사용하지 않고 resultMap 사용 -->
+<select id="orderDetailInfo2" parameterType="Long" resultMap="orderDetailProductMap">
+	SELECT
+		OT.ORD_CODE, OT.PRO_NUM, OT.DT_AMOUNT, P.PRO_NAME, P.PRO_PRICE, OT.DT_AMOUNT * P.PRO_PRICE AS ORD_PRICE, P.PRO_UP_FOLDER, P.PRO_IMG
+	FROM
+		ORDETAIL_TBL OT, PRODUCT_TBL P
+	WHERE 
+		OT.PRO_NUM = P.PRO_NUM AND OT.ORD_CODE = #{ord_code}
+</select>
+
+<!-- 테이블의 컬럼명과 클래스의 필드명이 다른 경우, resultMap 또는 컬럼명을 별칭으로 일치시킨 뒤 resultType으로 처리 -->
+<!-- resultMap: 테이블의 컬럼명과 클래스의 필드명이 다를 경우 매핑하는 목적 -->
+
+<!-- OrderDetailProductVO 클래스를 나타내는 의미 -->
+<!-- 기존 클래스를 <collection>으로 표현 -->
+<resultMap type="com.docmall.demo.domain.OrderDetailProductVO" id="orderDetailProductMap">
+	<collection property="orderDetailVO" resultMap="orderDetailMap"></collection>
+	<collection property="productVO" resultMap="productMap"></collection>
+</resultMap>
+
+<!-- OrderDetailVO 필드에서 필요한 정보 저장 -->
+<!-- id는 기본키, result는 일반 필드 -->
+<resultMap type="com.docmall.demo.domain.OrderDetailVO" id="orderDetailMap">
+	<id property="ord_code" column="ord_code" />
+	<id property="pro_num" column="pro_num" />
+	<result property="dt_amount" column="dt_amount" />
+	<result property="dt_price" column="dt_price" />
+</resultMap>
+
+<!-- ProductVO 필드에서 필요한 정보 저장 -->
+<!-- id는 기본키, result는 일반 필드 -->
+<resultMap type="com.docmall.demo.domain.ProductVO" id="productMap">
+	<id property="pro_num" column="pro_num" />
+	<result property="cg_code" column="cg_code" />
+	<result property="pro_name" column="pro_name" />
+	<result property="pro_price" column="pro_price" />
+	<result property="pro_discount" column="pro_discount" />
+	<result property="pro_publisher" column="pro_publisher" />
+	<result property="pro_content" column="pro_content" />
+	<result property="pro_up_folder" column="pro_up_folder" />
+	<result property="pro_img" column="pro_img" />
+	<result property="pro_amount" column="pro_amount" />
+	<result property="pro_buy" column="pro_buy" />
+	<result property="pro_date" column="pro_date" />
+	<result property="pro_updatedate" column="pro_updatedate" />
+</resultMap>
+
+<delete id="order_product_delete" parameterType="map">
+	DELETE FROM
+		ORDETAIL_TBL
+	WHERE
+		ORD_CODE = #{ord_code} AND PRO_NUM = #{pro_num} <!-- 복합키 설정 -->
+</delete>
+
+</mapper>
